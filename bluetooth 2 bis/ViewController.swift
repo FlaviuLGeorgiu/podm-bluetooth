@@ -11,10 +11,21 @@ import CoreMotion
 import CoreBluetooth
 
 class ViewController: UIViewController {
-
+    
+    // MARK: Gradient stuff
+    
+    let gradient = CAGradientLayer()
+    var gradientSet = [[CGColor]]()
+    var currentGradient: Int = 0
+    
+    let gradientOne = UIColor(red: 48/255, green: 62/255, blue: 103/255, alpha: 1).cgColor
+    let gradientTwo = UIColor(red: 244/255, green: 88/255, blue: 53/255, alpha: 1).cgColor
+    let gradientThree = UIColor(red: 196/255, green: 70/255, blue: 107/255, alpha: 1).cgColor
+    
+    // MARK: APP stuff
+    
     let manager = CMMotionManager()
     let interval = 0.01
-    
     
     let SERVICE_UUID_XY = CBUUID(string: "0BE27C50-8BD0-40A5-AC61-88DC52CE9C64")
     let SERVICE_UUID_SHOOT = CBUUID(string: "5DA21B79-CA3E-4398-A470-4565E6D02A61")
@@ -49,16 +60,14 @@ class ViewController: UIViewController {
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        
+
         centralManager = CBCentralManager()
         centralManager.delegate = self
         
         peripheralManager = CBPeripheralManager(delegate: self, queue: nil)
         
         guard manager.isDeviceMotionAvailable else { return }
-        
         manager.deviceMotionUpdateInterval = interval
-        
         manager.startDeviceMotionUpdates(to: OperationQueue.main, withHandler: {(data, error) in
             if self.sendingData {
                 self.sentX = false
@@ -70,25 +79,71 @@ class ViewController: UIViewController {
                 self.sentX = self.peripheralManager.updateValue(String(format: "%.4f", self.x).data(using: .utf8)!, for: self.myCharacteristicX!, onSubscribedCentrals: self.central)
                 self.sentY = self.peripheralManager.updateValue(String(format: "%.4f", self.y).data(using: .utf8)!, for: self.myCharacteristicY!, onSubscribedCentrals: self.central)
             }
-            //let rotation = atan2(gravity.x, gravity.y) - .pi
-            //print(gravity)
-            //CGAffineTransform(rotationAngle: CGFloat(rotation))
         })
         
         let tap = UITapGestureRecognizer(target: self, action: #selector(self.handleTap(_:)))
         self.view.addGestureRecognizer(tap)
         
-        
     }
     
+    // MARK: Handle Tap
+    
     @objc func handleTap(_ sender: UITapGestureRecognizer? = nil) {
-        print("tap")
-        if let _ = self.shoot {
-            selectedPeripheral.writeValue("0.0000".data(using: .utf8)!, for: self.shoot!, type: CBCharacteristicWriteType.withoutResponse)
+        if selectedPeripheral != nil && selectedPeripheral.state == .connected {
+            print("shoot")
+            if let _ = self.shoot {
+                selectedPeripheral.writeValue("0.0000".data(using: .utf8)!, for: self.shoot!, type: CBCharacteristicWriteType.withoutResponse)
+            }
         }
     }
+    
+    // MARK: Gradient stuff
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        
+        gradientSet.append([gradientOne, gradientTwo])
+        gradientSet.append([gradientTwo, gradientThree])
+        gradientSet.append([gradientThree, gradientOne])
+        
+        gradient.frame = self.view.bounds
+        gradient.colors = gradientSet[currentGradient]
+        gradient.startPoint = CGPoint(x:0, y:0)
+        gradient.endPoint = CGPoint(x:1, y:1)
+        gradient.drawsAsynchronously = true
+        self.view.layer.addSublayer(gradient)
+        
+        animateGradient()
+    }
+    
+    func animateGradient() {
+        if currentGradient < gradientSet.count - 1 {
+            currentGradient += 1
+        } else {
+            currentGradient = 0
+        }
+        let gradientChangeAnimation = CABasicAnimation(keyPath: "colors")
+        gradientChangeAnimation.delegate = self
+        gradientChangeAnimation.duration = 5.0
+        gradientChangeAnimation.toValue = gradientSet[currentGradient]
+        gradientChangeAnimation.fillMode = CAMediaTimingFillMode.forwards
+        gradientChangeAnimation.isRemovedOnCompletion = false
+        gradient.add(gradientChangeAnimation, forKey: "colorChange")
+    }
+    
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        get { return .portrait }
+    }
 
+}
 
+extension ViewController: CAAnimationDelegate {
+    func animationDidStop(_ anim: CAAnimation, finished flag: Bool) {
+        if flag {
+            gradient.colors = gradientSet[currentGradient]
+            animateGradient()
+        }
+    }
 }
 
 extension ViewController: CBCentralManagerDelegate {
@@ -106,7 +161,6 @@ extension ViewController: CBCentralManagerDelegate {
     }
     
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
-        
         
         if let advertisementName = advertisementData[CBAdvertisementDataLocalNameKey] as? String {
             
@@ -128,6 +182,14 @@ extension ViewController: CBCentralManagerDelegate {
         selectedPeripheral.discoverServices([SERVICE_UUID_SHOOT])
         print ("Central: hemos conectado con el periférico:" + peripheral.name!)
         
+    }
+    
+    func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        print("disconnect")
+    }
+    
+    func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        print("fail")
     }
 }
 
